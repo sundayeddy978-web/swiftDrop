@@ -1,0 +1,684 @@
+import { useState, useEffect, useRef } from "react";
+
+const C = {
+  slate: "#0F172A", white: "#FFFFFF", amber: "#F59E0B", amberDark: "#D97706",
+  slateLight: "#1E293B", slateMid: "#334155", gray: "#64748B", grayLight: "#CBD5E1",
+  grayBg: "#F8FAFC", success: "#10B981", danger: "#EF4444",
+};
+const sf = { fontFamily: "'Syne', 'Arial Black', sans-serif", bodyFont: "system-ui, Arial, sans-serif" };
+const uid = () => Math.random().toString(36).slice(2, 9);
+const now = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+const SAMPLE_ORDERS = [
+  {
+    id: "PKG-4821", customer: "David K.", email: "david@example.com", phone: "+1 555-0192",
+    service: "Fast Delivery", from: "42 Oak Street", to: "19 Maple Ave",
+    status: "In Transit", eta: "2:45 PM", progress: 65,
+    events: [
+      { time: "1:10 PM", label: "Order placed", done: true },
+      { time: "1:25 PM", label: "Driver dispatched", done: true },
+      { time: "1:40 PM", label: "Package picked up", done: true },
+      { time: "2:10 PM", label: "En route to destination", done: true },
+      { time: "2:45 PM", label: "Delivered", done: false },
+    ],
+    messages: [
+      { from: "customer", text: "Hi, is my package on the way?", time: "1:42 PM" },
+      { from: "admin", text: "Yes! Your driver just picked it up. ETA ~2:45 PM.", time: "1:43 PM" },
+    ],
+  },
+  {
+    id: "PKG-3307", customer: "Sarah M.", email: "sarah@example.com", phone: "+1 555-0284",
+    service: "Scheduled Delivery", from: "7 Pine Road", to: "88 Cedar Blvd",
+    status: "Delivered", eta: "—", progress: 100,
+    events: [
+      { time: "10:00 AM", label: "Order placed", done: true },
+      { time: "10:20 AM", label: "Driver dispatched", done: true },
+      { time: "10:45 AM", label: "Package picked up", done: true },
+      { time: "11:15 AM", label: "En route to destination", done: true },
+      { time: "11:50 AM", label: "Delivered", done: true },
+    ],
+    messages: [{ from: "customer", text: "Got it! Thank you so much.", time: "11:52 AM" }],
+  },
+  {
+    id: "PKG-5519", customer: "James R.", email: "james@example.com", phone: "+1 555-0371",
+    service: "Standard Shipping", from: "3 Birch Lane", to: "55 Elm Street",
+    status: "Awaiting Pickup", eta: "4:00 PM", progress: 15,
+    events: [
+      { time: "3:00 PM", label: "Order placed", done: true },
+      { time: "3:15 PM", label: "Driver dispatched", done: false },
+      { time: "3:40 PM", label: "Package picked up", done: false },
+      { time: "3:50 PM", label: "En route to destination", done: false },
+      { time: "4:00 PM", label: "Delivered", done: false },
+    ],
+    messages: [],
+  },
+];
+
+const GlobalStyle = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0F172A; color: #FFFFFF; font-family: system-ui, Arial, sans-serif; }
+    html { scroll-behavior: smooth; }
+    button { cursor: pointer; border: none; outline: none; }
+    a { text-decoration: none; color: inherit; }
+    input, textarea, select { outline: none; font-family: system-ui, Arial, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1E293B; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    .fade-in { animation: fadeUp .5s ease forwards; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+    .pulse { animation: pulse 2.5s infinite; }
+    @keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(245,158,11,.5); } 60% { box-shadow:0 0 0 12px rgba(245,158,11,0); } }
+  `}</style>
+);
+
+const AmberBtn = ({ children, onClick, style: s = {}, small }) => (
+  <button onClick={onClick} style={{
+    background: C.amber, color: C.slate, fontFamily: sf.fontFamily,
+    fontWeight: 700, fontSize: small ? 13 : 15, padding: small ? "8px 18px" : "14px 28px",
+    borderRadius: 6, transition: "background .2s, transform .15s", ...s,
+  }}
+    onMouseEnter={e => { e.currentTarget.style.background = C.amberDark; e.currentTarget.style.transform = "scale(1.03)"; }}
+    onMouseLeave={e => { e.currentTarget.style.background = s.background || C.amber; e.currentTarget.style.transform = "scale(1)"; }}
+  >{children}</button>
+);
+
+const OutlineBtn = ({ children, onClick }) => (
+  <button onClick={onClick} style={{
+    background: "transparent", color: C.white, border: `2px solid ${C.amber}`,
+    fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 15, padding: "12px 26px", borderRadius: 6, transition: "all .2s",
+  }}
+    onMouseEnter={e => { e.currentTarget.style.background = C.amber; e.currentTarget.style.color = C.slate; }}
+    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.white; }}
+  >{children}</button>
+);
+
+const SectionWrap = ({ children, light, id }) => (
+  <section id={id} style={{ background: light ? C.grayBg : C.slate, color: light ? C.slate : C.white, padding: "72px 24px" }}>
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>{children}</div>
+  </section>
+);
+
+const SectionTitle = ({ children, light, sub }) => (
+  <div style={{ textAlign: "center", marginBottom: 48 }}>
+    <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(28px,4vw,42px)", color: light ? C.slate : C.white, lineHeight: 1.15 }}>{children}</h2>
+    {sub && <p style={{ color: light ? C.gray : C.grayLight, marginTop: 12, fontSize: 17 }}>{sub}</p>}
+  </div>
+);
+
+const Nav = ({ page, setPage }) => {
+  const links = ["Home", "Services", "About", "Contact", "Track Package", "Admin"];
+  return (
+    <nav style={{ position: "sticky", top: 0, zIndex: 999, background: C.slate, borderBottom: `1px solid ${C.slateMid}`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+      <div onClick={() => setPage("Home")} style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 20, color: C.amber, cursor: "pointer" }}>⚡ SwiftDrop</div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {links.map(l => (
+          <button key={l} onClick={() => setPage(l)} style={{
+            background: page === l ? C.amber : "transparent", color: page === l ? C.slate : C.grayLight,
+            fontFamily: sf.fontFamily, fontWeight: 600, fontSize: 12, padding: "6px 12px", borderRadius: 5, transition: "all .2s",
+            border: l === "Admin" ? `1px solid ${C.slateMid}` : "none",
+          }}>{l === "Admin" ? "🔒 Admin" : l}</button>
+        ))}
+      </div>
+    </nav>
+  );
+};
+
+const HomePage = ({ setPage }) => {
+  const faqs = [
+    { q: "How fast can you deliver my package?", a: "We offer instant same-day delivery. Most local packages arrive within 1 to 2 hours of pickup." },
+    { q: "Are my items insured during transit?", a: "Yes. Every delivery is fully tracked and insured at no extra cost to you." },
+    { q: "Can I track my package in real time?", a: "Absolutely. Use our Track Package page with your order ID for live step-by-step updates." },
+    { q: "What areas do you cover?", a: "We cover the full metro area and surrounding suburbs. Contact us to confirm your location." },
+  ];
+  const [openFaq, setOpenFaq] = useState(null);
+  return (
+    <>
+      <section style={{ background: `linear-gradient(135deg, ${C.slate} 60%, ${C.slateLight})`, padding: "100px 24px 80px", textAlign: "center", borderBottom: `3px solid ${C.amber}` }}>
+        <div style={{ maxWidth: 800, margin: "0 auto" }} className="fade-in">
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.slateLight, color: C.amber, padding: "6px 16px", borderRadius: 99, fontSize: 13, fontWeight: 700, marginBottom: 24, border: `1px solid ${C.amber}30` }}>
+            🚚 Same-Day Delivery · Real-Time Tracking · 100% Insured
+          </div>
+          <h1 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(34px,5.5vw,64px)", lineHeight: 1.1, color: C.white, marginBottom: 20 }}>
+            Safe, On-Time Delivery<br /><span style={{ color: C.amber }}>for Your Important Packages.</span>
+          </h1>
+          <p style={{ fontSize: 18, color: C.grayLight, maxWidth: 560, margin: "0 auto 36px", lineHeight: 1.7 }}>
+            No hidden fees, no unexpected delays. Track your delivery from our hands to your door in real-time.
+          </p>
+          <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+            <AmberBtn onClick={() => setPage("Contact")} style={{ fontSize: 17, padding: "16px 36px" }} className="pulse">Book Your Delivery Now</AmberBtn>
+            <OutlineBtn onClick={() => setPage("Contact")}>Get a Free Quote</OutlineBtn>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ background: C.amber, padding: "20px 24px" }}>
+        <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontFamily: sf.fontFamily, fontWeight: 700, color: C.slate, fontSize: 16 }}>📦 Track a Package:</span>
+          <input placeholder="Enter order ID e.g. PKG-4821" style={{ padding: "10px 16px", borderRadius: 6, border: "none", fontSize: 15, flex: 1, minWidth: 200, background: C.white, color: C.slate }} />
+          <button onClick={() => setPage("Track Package")} style={{ background: C.slate, color: C.white, padding: "10px 24px", borderRadius: 6, fontWeight: 700, fontSize: 15, fontFamily: sf.fontFamily }}>Track Now →</button>
+        </div>
+      </section>
+
+      <SectionWrap light>
+        <p style={{ textAlign: "center", color: C.gray, fontWeight: 600, marginBottom: 32, fontSize: 14, letterSpacing: 1, textTransform: "uppercase" }}>Trusted by over 10,000 local businesses and individuals</p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 28, flexWrap: "wrap" }}>
+          {[["🔒","Secure Handling"],["✅","100% Insured"],["📍","Live Tracking"],["⚡","Same-Day"]].map(([icon,label]) => (
+            <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "20px 28px", background: C.white, borderRadius: 12, boxShadow: "0 2px 16px rgba(0,0,0,.08)", minWidth: 110 }}>
+              <span style={{ fontSize: 28 }}>{icon}</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: C.slate }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </SectionWrap>
+
+      <SectionWrap>
+        <SectionTitle sub="What sets us apart from every other courier in the city.">Results You Can Count On</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 28 }}>
+          {[
+            { icon: "⏱️", title: "Save Your Time", body: "You don't have to drop anything off. We pick up directly from your doorstep within 30 minutes." },
+            { icon: "🛡️", title: "Total Peace of Mind", body: "Your package arrives safely, exactly when we promised, or you get your money back." },
+            { icon: "⭐", title: "Keep Your Customers Happy", body: "Protect your business reputation with flawless, same-day delivery your clients can count on." },
+          ].map(({ icon, title, body }) => (
+            <div key={title} style={{ background: C.slateLight, borderRadius: 14, padding: 32, border: `1px solid ${C.slateMid}`, transition: "transform .2s" }}
+              onMouseEnter={e => e.currentTarget.style.transform = "translateY(-4px)"}
+              onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+            >
+              <div style={{ fontSize: 36, marginBottom: 16 }}>{icon}</div>
+              <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 20, color: C.amber, marginBottom: 10 }}>{title}</h3>
+              <p style={{ color: C.grayLight, lineHeight: 1.7 }}>{body}</p>
+            </div>
+          ))}
+        </div>
+      </SectionWrap>
+
+      <SectionWrap light>
+        <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>⭐⭐⭐⭐⭐</div>
+          <blockquote style={{ fontSize: 20, lineHeight: 1.7, color: C.slate, fontStyle: "italic", marginBottom: 20 }}>
+            "I used to worry about late shipments destroying my small business reputation. This team changed everything. Every single delivery arrives exactly on time."
+          </blockquote>
+          <p style={{ fontWeight: 700, color: C.gray }}>— David K., Business Owner</p>
+        </div>
+      </SectionWrap>
+
+      <SectionWrap>
+        <SectionTitle sub="Quick answers to your most common questions.">Frequently Asked Questions</SectionTitle>
+        <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
+          {faqs.map((f, i) => (
+            <div key={i} style={{ background: C.slateLight, borderRadius: 10, border: `1px solid ${openFaq === i ? C.amber : C.slateMid}`, overflow: "hidden", transition: "border .2s" }}>
+              <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: "100%", textAlign: "left", padding: "18px 24px", background: "none", color: C.white, fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 16, display: "flex", justifyContent: "space-between" }}>
+                {f.q}<span style={{ color: C.amber }}>{openFaq === i ? "−" : "+"}</span>
+              </button>
+              {openFaq === i && <div style={{ padding: "0 24px 20px", color: C.grayLight, lineHeight: 1.7 }}>{f.a}</div>}
+            </div>
+          ))}
+        </div>
+      </SectionWrap>
+
+      <section style={{ background: C.amber, textAlign: "center", padding: "72px 24px" }}>
+        <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(26px,4vw,42px)", color: C.slate, marginBottom: 16 }}>Ready to ship? Let's get your package moving.</h2>
+        <p style={{ color: C.slateLight, marginBottom: 32, fontSize: 16 }}>Need help? Email us at <strong>Donald001dave@gmail.com</strong></p>
+        <AmberBtn onClick={() => setPage("Contact")} style={{ background: C.slate, color: C.white, fontSize: 18, padding: "16px 40px" }}>Book a Delivery Now →</AmberBtn>
+      </section>
+    </>
+  );
+};
+
+const ServicesPage = ({ setPage }) => {
+  const services = [
+    { icon: "⚡", name: "Fast Delivery", tag: "URGENT", color: C.danger, desc: "High-priority courier service for items that need to move immediately. We dispatch a dedicated driver to your location right away.", ideal: "People or businesses with urgent documents, medical supplies, or last-minute orders.", benefit: "Your package skips the warehouse sorting line and goes directly to its destination.", cta: "Book Fast Delivery" },
+    { icon: "📅", name: "Scheduled Delivery", tag: "POPULAR", color: C.amber, desc: "Pick a specific date and time window that works best for you or your customer. We arrive exactly during that period.", ideal: "Subscription businesses, online stores, and people planning gifts or event supplies.", benefit: "Eliminates the guessing game. You know exactly when to open the door.", cta: "Schedule a Delivery" },
+    { icon: "🛡️", name: "Guaranteed No-Delay Shipping", tag: "RELIABLE", color: C.success, desc: "Our standard, ultra-reliable logistics service backed by an on-time guarantee. If we are late, the delivery is free.", ideal: "Everyday senders who want affordable rates without risking poor service.", benefit: "Zero stress. We plan optimized routes to bypass heavy traffic and delays.", cta: "Start Standard Shipping" },
+  ];
+  return (
+    <>
+      <section style={{ background: `linear-gradient(135deg, ${C.slate}, ${C.slateLight})`, padding: "80px 24px 60px", textAlign: "center", borderBottom: `3px solid ${C.amber}` }}>
+        <h1 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(32px,5vw,56px)", color: C.white, marginBottom: 16 }}>Our <span style={{ color: C.amber }}>Delivery Services</span></h1>
+        <p style={{ color: C.grayLight, fontSize: 18, maxWidth: 500, margin: "0 auto" }}>Three options built around your schedule, urgency, and budget.</p>
+      </section>
+      <SectionWrap>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 28 }}>
+          {services.map(s => (
+            <div key={s.name} style={{ background: C.slateLight, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.slateMid}`, display: "flex", flexDirection: "column", transition: "transform .2s" }}
+              onMouseEnter={e => e.currentTarget.style.transform = "translateY(-6px)"}
+              onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+            >
+              <div style={{ background: s.color, padding: "8px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontFamily: sf.fontFamily, fontWeight: 800, color: C.white, fontSize: 12, letterSpacing: 2 }}>{s.tag}</span>
+                <span style={{ fontSize: 22 }}>{s.icon}</span>
+              </div>
+              <div style={{ padding: 28, flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+                <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 22, color: C.white }}>{s.name}</h3>
+                <p style={{ color: C.grayLight, lineHeight: 1.7, fontSize: 15 }}>{s.desc}</p>
+                <div style={{ background: C.slate, borderRadius: 8, padding: 14 }}>
+                  <p style={{ color: C.amber, fontWeight: 700, fontSize: 12, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Ideal For</p>
+                  <p style={{ color: C.grayLight, fontSize: 14 }}>{s.ideal}</p>
+                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ color: s.color, fontSize: 18 }}>✓</span>
+                  <p style={{ color: C.grayLight, fontSize: 14, lineHeight: 1.6 }}>{s.benefit}</p>
+                </div>
+                <AmberBtn onClick={() => setPage("Contact")} style={{ marginTop: "auto", width: "100%" }}>{s.cta}</AmberBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      </SectionWrap>
+      <section style={{ background: C.amber, padding: "48px 24px", textAlign: "center" }}>
+        <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, color: C.slate, fontSize: 28, marginBottom: 20 }}>Not sure which service you need?</h2>
+        <AmberBtn onClick={() => setPage("Contact")} style={{ background: C.slate, color: C.white }}>Contact Us — We'll Help You Choose</AmberBtn>
+      </section>
+    </>
+  );
+};
+
+const AboutPage = ({ setPage }) => (
+  <>
+    <section style={{ background: `linear-gradient(135deg, ${C.slate}, ${C.slateLight})`, padding: "80px 24px 60px", textAlign: "center", borderBottom: `3px solid ${C.amber}` }}>
+      <h1 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(30px,5vw,52px)", color: C.white, marginBottom: 16 }}>Built on <span style={{ color: C.amber }}>Trust & Reliability</span></h1>
+      <p style={{ color: C.grayLight, fontSize: 18, maxWidth: 560, margin: "0 auto" }}>The story behind SwiftDrop — why we started and what drives us.</p>
+    </section>
+    <SectionWrap>
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+        <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 28, color: C.amber, marginBottom: 16 }}>Our Origin Story</h2>
+        <p style={{ color: C.grayLight, lineHeight: 1.85, fontSize: 17, marginBottom: 40 }}>We started this delivery company because we were tired of watching people lose time, money, and customer trust due to broken delivery promises. Packages were arriving late, items were getting damaged, and customer service lines were completely silent. We knew there had to be a better way. We built this business to provide a straightforward, honest delivery service that treats your packages like our own.</p>
+        <div style={{ background: C.slateLight, borderRadius: 14, padding: 32, border: `1px solid ${C.slateMid}`, marginBottom: 40 }}>
+          <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 22, color: C.amber, marginBottom: 12 }}>Our Mission</h3>
+          <p style={{ color: C.grayLight, lineHeight: 1.8 }}>To provide the most dependable, transparent delivery network in the city, ensuring your packages arrive safely and on time, every single day.</p>
+        </div>
+        <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 24, color: C.white, marginBottom: 24 }}>Core Values</h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 40 }}>
+          {[{icon:"💯",name:"Absolute Honesty",text:"We give you real delivery windows, not vague promises."},{icon:"📦",name:"Unmatched Safety",text:"We handle every package with strict care so it arrives in perfect condition."},{icon:"🕐",name:"Reliability First",text:"We show up on time, rain or shine, because your schedule matters."}].map(v => (
+            <div key={v.name} style={{ display: "flex", gap: 18, alignItems: "flex-start", background: C.slateLight, borderRadius: 10, padding: 20, border: `1px solid ${C.slateMid}` }}>
+              <span style={{ fontSize: 28 }}>{v.icon}</span>
+              <div><strong style={{ fontFamily: sf.fontFamily, color: C.white, display: "block", marginBottom: 6 }}>{v.name}</strong><span style={{ color: C.grayLight }}>{v.text}</span></div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: C.amber, borderRadius: 14, padding: 32, marginBottom: 40 }}>
+          <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 22, color: C.slate, marginBottom: 12 }}>Why We're Genuinely Different</h3>
+          <p style={{ color: C.slateLight, lineHeight: 1.8 }}>Unlike massive shipping corporations, you are never just a tracking number to us. We don't hide behind automated robot phone lines. When you work with us, you get direct access to real drivers and local support staff instantly.</p>
+        </div>
+        <p style={{ color: C.grayLight, fontSize: 17, lineHeight: 1.8, marginBottom: 32 }}>You have enough things to manage. Let us take care of the logistics. Trust us with your next delivery, and experience how simple shipping should actually be.</p>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <AmberBtn onClick={() => setPage("Contact")}>Book a Delivery</AmberBtn>
+          <OutlineBtn onClick={() => setPage("Contact")}>Contact Us</OutlineBtn>
+        </div>
+      </div>
+    </SectionWrap>
+  </>
+);
+
+const ContactPage = () => {
+  const [form, setForm] = useState({ name: "", email: "", phone: "", service: "", message: "" });
+  const [sent, setSent] = useState(false);
+  return (
+    <>
+      <section style={{ background: `linear-gradient(135deg, ${C.slate}, ${C.slateLight})`, padding: "80px 24px 60px", textAlign: "center", borderBottom: `3px solid ${C.amber}` }}>
+        <h1 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(30px,5vw,52px)", color: C.white, marginBottom: 16 }}>Get in <span style={{ color: C.amber }}>Touch</span></h1>
+        <p style={{ color: C.grayLight, fontSize: 18 }}>Book a delivery, request a quote, or ask us anything.</p>
+      </section>
+      <SectionWrap>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 48, maxWidth: 960, margin: "0 auto" }}>
+          <div>
+            <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 24, color: C.white, marginBottom: 28 }}>Send Us a Message</h2>
+            {sent ? (
+              <div style={{ background: C.success + "20", border: `1px solid ${C.success}`, borderRadius: 12, padding: 32, textAlign: "center" }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+                <h3 style={{ fontFamily: sf.fontFamily, color: C.success, marginBottom: 8 }}>Message Sent!</h3>
+                <p style={{ color: C.grayLight }}>We'll get back to you within 30 minutes during business hours.</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {[{key:"name",label:"Full Name *",type:"text",ph:"John Smith"},{key:"email",label:"Email Address *",type:"email",ph:"john@example.com"},{key:"phone",label:"Phone Number",type:"tel",ph:"+1 555-0000"}].map(f => (
+                  <div key={f.key}>
+                    <label style={{ color: C.grayLight, fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>{f.label}</label>
+                    <input type={f.type} placeholder={f.ph} value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                      style={{ width: "100%", padding: "12px 16px", borderRadius: 8, background: C.slateLight, border: `1px solid ${C.slateMid}`, color: C.white, fontSize: 15 }} />
+                  </div>
+                ))}
+                <div>
+                  <label style={{ color: C.grayLight, fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Service Needed</label>
+                  <select value={form.service} onChange={e => setForm(p => ({ ...p, service: e.target.value }))}
+                    style={{ width: "100%", padding: "12px 16px", borderRadius: 8, background: C.slateLight, border: `1px solid ${C.slateMid}`, color: C.white, fontSize: 15 }}>
+                    <option value="">Select a service…</option>
+                    <option>Fast Delivery</option><option>Scheduled Delivery</option><option>Standard Shipping</option><option>Get a Quote</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ color: C.grayLight, fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Message *</label>
+                  <textarea rows={5} placeholder="Tell us pickup address, drop-off address, and any special instructions…" value={form.message} onChange={e => setForm(p => ({ ...p, message: e.target.value }))}
+                    style={{ width: "100%", padding: "12px 16px", borderRadius: 8, background: C.slateLight, border: `1px solid ${C.slateMid}`, color: C.white, fontSize: 15, resize: "vertical" }} />
+                </div>
+                <AmberBtn onClick={() => { if (form.name && form.email && form.message) setSent(true); }} style={{ width: "100%", padding: "16px", fontSize: 16 }}>Send Message →</AmberBtn>
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 24, color: C.white }}>Direct Contact</h2>
+            {[{icon:"📧",label:"Email",value:"Donald001dave@gmail.com"},{icon:"⏰",label:"Hours",value:"Mon–Sat, 7 AM – 9 PM"},{icon:"🚚",label:"Coverage",value:"Full metro area & suburbs"}].map(c => (
+              <div key={c.label} style={{ display: "flex", gap: 16, alignItems: "flex-start", background: C.slateLight, borderRadius: 12, padding: 20, border: `1px solid ${C.slateMid}` }}>
+                <span style={{ fontSize: 24 }}>{c.icon}</span>
+                <div><p style={{ color: C.gray, fontSize: 12, fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>{c.label}</p><p style={{ color: C.white, fontSize: 15 }}>{c.value}</p></div>
+              </div>
+            ))}
+            <div style={{ background: C.amber + "15", border: `1px solid ${C.amber}`, borderRadius: 12, padding: 20 }}>
+              <p style={{ color: C.amber, fontWeight: 700, marginBottom: 6 }}>⚡ Quick Response Promise</p>
+              <p style={{ color: C.grayLight, fontSize: 14 }}>All enquiries are answered within 30 minutes by a real person — not a bot.</p>
+            </div>
+          </div>
+        </div>
+      </SectionWrap>
+    </>
+  );
+};
+
+const TrackPage = ({ orders, setOrders }) => {
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState(null);
+  const [searched, setSearched] = useState(false);
+  const [msgText, setMsgText] = useState("");
+
+  const handleSearch = () => {
+    const match = orders.find(o => o.id.toLowerCase() === query.trim().toLowerCase());
+    setFound(match || null);
+    setSearched(true);
+  };
+
+  const sendMsg = () => {
+    if (!msgText.trim() || !found) return;
+    const newMsg = { from: "customer", text: msgText.trim(), time: now() };
+    setOrders(prev => prev.map(o => o.id === found.id ? { ...o, messages: [...o.messages, newMsg] } : o));
+    setFound(prev => ({ ...prev, messages: [...prev.messages, newMsg] }));
+    setMsgText("");
+  };
+
+  useEffect(() => {
+    if (found) setFound(orders.find(o => o.id === found.id));
+  }, [orders]);
+
+  const sc = s => s === "Delivered" ? C.success : s === "In Transit" ? C.amber : C.grayLight;
+
+  return (
+    <>
+      <section style={{ background: `linear-gradient(135deg, ${C.slate}, ${C.slateLight})`, padding: "80px 24px 60px", textAlign: "center", borderBottom: `3px solid ${C.amber}` }}>
+        <h1 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: "clamp(30px,5vw,52px)", color: C.white, marginBottom: 16 }}>Track Your <span style={{ color: C.amber }}>Package</span></h1>
+        <p style={{ color: C.grayLight, fontSize: 18, marginBottom: 36 }}>Enter your order ID to see live updates on your delivery.</p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", maxWidth: 480, margin: "0 auto", flexWrap: "wrap" }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()} placeholder="e.g. PKG-4821"
+            style={{ flex: 1, minWidth: 200, padding: "14px 20px", borderRadius: 8, background: C.slateLight, border: `2px solid ${C.amber}`, color: C.white, fontSize: 16, fontFamily: sf.fontFamily, fontWeight: 700 }} />
+          <AmberBtn onClick={handleSearch} style={{ padding: "14px 28px" }}>Track →</AmberBtn>
+        </div>
+        <p style={{ color: C.gray, fontSize: 13, marginTop: 16 }}>
+          Demo IDs: {["PKG-4821","PKG-3307","PKG-5519"].map((id,i) => (
+            <span key={id}><span style={{ color: C.amber, cursor: "pointer" }} onClick={() => setQuery(id)}>{id}</span>{i < 2 ? " · " : ""}</span>
+          ))}
+        </p>
+      </section>
+
+      <SectionWrap>
+        {!searched ? (
+          <div style={{ textAlign: "center", color: C.gray, fontSize: 16 }}><div style={{ fontSize: 64, marginBottom: 16 }}>📦</div>Enter your Order ID above to begin tracking.</div>
+        ) : !found ? (
+          <div style={{ textAlign: "center", color: C.danger, fontSize: 16 }}><div style={{ fontSize: 64, marginBottom: 16 }}>❌</div>No order found for "<strong>{query}</strong>". Please check your ID and try again.</div>
+        ) : (
+          <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }} className="fade-in">
+            {/* STATUS */}
+            <div style={{ background: C.slateLight, borderRadius: 16, padding: 28, border: `1px solid ${C.slateMid}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+                <div>
+                  <p style={{ color: C.gray, fontSize: 13, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Order ID</p>
+                  <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 24, color: C.white }}>{found.id}</h2>
+                  <p style={{ color: C.grayLight, marginTop: 4 }}>{found.service}</p>
+                </div>
+                <div style={{ background: sc(found.status) + "20", border: `1px solid ${sc(found.status)}`, borderRadius: 99, padding: "8px 18px" }}>
+                  <span style={{ color: sc(found.status), fontWeight: 700, fontSize: 14 }}>{found.status === "In Transit" ? "🚚 " : found.status === "Delivered" ? "✅ " : "⏳ "}{found.status}</span>
+                </div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ color: C.grayLight, fontSize: 13 }}>Delivery Progress</span>
+                  <span style={{ color: C.amber, fontSize: 13, fontWeight: 700 }}>{found.progress}%</span>
+                </div>
+                <div style={{ background: C.slateMid, borderRadius: 99, height: 10, overflow: "hidden" }}>
+                  <div style={{ width: `${found.progress}%`, height: "100%", background: found.progress === 100 ? C.success : C.amber, borderRadius: 99, transition: "width 1s ease" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 130, background: C.slate, borderRadius: 8, padding: 12 }}>
+                  <p style={{ color: C.gray, fontSize: 11, textTransform: "uppercase" }}>From</p>
+                  <p style={{ color: C.white, fontWeight: 700 }}>{found.from}</p>
+                </div>
+                <span style={{ color: C.amber, fontSize: 24 }}>→</span>
+                <div style={{ flex: 1, minWidth: 130, background: C.slate, borderRadius: 8, padding: 12 }}>
+                  <p style={{ color: C.gray, fontSize: 11, textTransform: "uppercase" }}>To</p>
+                  <p style={{ color: C.white, fontWeight: 700 }}>{found.to}</p>
+                </div>
+                {found.eta !== "—" && <div style={{ background: C.amber + "20", borderRadius: 8, padding: 12, textAlign: "center" }}>
+                  <p style={{ color: C.gray, fontSize: 11, textTransform: "uppercase" }}>ETA</p>
+                  <p style={{ color: C.amber, fontWeight: 800, fontSize: 18 }}>{found.eta}</p>
+                </div>}
+              </div>
+            </div>
+
+            {/* TIMELINE */}
+            <div style={{ background: C.slateLight, borderRadius: 16, padding: 28, border: `1px solid ${C.slateMid}` }}>
+              <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 18, color: C.white, marginBottom: 24 }}>📍 Live Tracking Timeline</h3>
+              {found.events.map((ev, i) => (
+                <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 28 }}>
+                    <div style={{ width: 20, height: 20, borderRadius: "50%", background: ev.done ? C.success : C.slateMid, border: `3px solid ${ev.done ? C.success : C.slateMid}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: C.white, flexShrink: 0 }}>{ev.done ? "✓" : ""}</div>
+                    {i < found.events.length - 1 && <div style={{ width: 2, flex: 1, minHeight: 28, background: ev.done ? C.success : C.slateMid, margin: "4px 0" }} />}
+                  </div>
+                  <div style={{ paddingBottom: 20 }}>
+                    <p style={{ color: ev.done ? C.white : C.gray, fontWeight: ev.done ? 700 : 400 }}>{ev.label}</p>
+                    <p style={{ color: C.gray, fontSize: 13 }}>{ev.time}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* MESSAGE THREAD */}
+            <div style={{ background: C.slateLight, borderRadius: 16, padding: 28, border: `1px solid ${C.slateMid}` }}>
+              <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 700, fontSize: 18, color: C.white, marginBottom: 6 }}>💬 Message Support</h3>
+              <p style={{ color: C.gray, fontSize: 13, marginBottom: 20 }}>Send a message — a real team member will reply (not a bot).</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, maxHeight: 260, overflowY: "auto" }}>
+                {found.messages.length === 0 && <p style={{ color: C.gray, fontSize: 14, textAlign: "center", padding: 20 }}>No messages yet.</p>}
+                {found.messages.map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: m.from === "customer" ? "flex-end" : "flex-start" }}>
+                    <div style={{ maxWidth: "75%", background: m.from === "customer" ? C.amber : C.slate, color: m.from === "customer" ? C.slate : C.white, borderRadius: m.from === "customer" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", padding: "10px 16px" }}>
+                      <p style={{ fontSize: 14 }}>{m.text}</p>
+                      <p style={{ fontSize: 11, opacity: .6, marginTop: 4, textAlign: "right" }}>{m.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 12 }}>
+                <input value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} placeholder="Type your message…"
+                  style={{ flex: 1, padding: "12px 16px", borderRadius: 8, background: C.slate, border: `1px solid ${C.slateMid}`, color: C.white, fontSize: 15 }} />
+                <AmberBtn onClick={sendMsg} small>Send</AmberBtn>
+              </div>
+            </div>
+          </div>
+        )}
+      </SectionWrap>
+    </>
+  );
+};
+
+const AdminPage = ({ orders, setOrders }) => {
+  const [pin, setPin] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [reply, setReply] = useState("");
+  const endRef = useRef(null);
+  const ADMIN_PIN = "1234";
+
+  const order = orders.find(o => o.id === selected);
+
+  const sendReply = () => {
+    if (!reply.trim() || !selected) return;
+    const msg = { from: "admin", text: reply.trim(), time: now() };
+    setOrders(prev => prev.map(o => o.id === selected ? { ...o, messages: [...o.messages, msg] } : o));
+    setReply("");
+  };
+
+  const updateStatus = (id, status) => {
+    setOrders(prev => prev.map(o => o.id !== id ? o : {
+      ...o, status,
+      progress: status === "Delivered" ? 100 : status === "In Transit" ? 65 : 15,
+      events: o.events.map((ev, i) =>
+        status === "Delivered" ? { ...ev, done: true }
+        : status === "In Transit" ? { ...ev, done: i <= 3 }
+        : { ...ev, done: i === 0 }
+      )
+    }));
+  };
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [orders, selected]);
+
+  const sc = s => s === "Delivered" ? C.success : s === "In Transit" ? C.amber : C.grayLight;
+
+  if (!authed) return (
+    <section style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.slate, padding: 24 }}>
+      <div style={{ background: C.slateLight, borderRadius: 16, padding: 48, width: "100%", maxWidth: 380, textAlign: "center", border: `1px solid ${C.slateMid}` }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+        <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, color: C.white, marginBottom: 8 }}>Admin Access</h2>
+        <p style={{ color: C.gray, marginBottom: 28 }}>Enter your PIN to access the messaging dashboard.</p>
+        <input type="password" value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === "Enter" && pin === ADMIN_PIN && setAuthed(true)} placeholder="PIN (demo: 1234)"
+          style={{ width: "100%", padding: "14px 18px", borderRadius: 8, marginBottom: 16, background: C.slate, border: `2px solid ${pin.length > 0 ? C.amber : C.slateMid}`, color: C.white, fontSize: 18, textAlign: "center", letterSpacing: 6 }} />
+        <AmberBtn onClick={() => { if (pin === ADMIN_PIN) setAuthed(true); }} style={{ width: "100%" }}>Unlock Dashboard</AmberBtn>
+        {pin.length > 0 && pin !== ADMIN_PIN && <p style={{ color: C.danger, marginTop: 12, fontSize: 14 }}>Incorrect PIN.</p>}
+      </div>
+    </section>
+  );
+
+  return (
+    <div style={{ display: "flex", height: "calc(100vh - 64px)", background: C.slate, overflow: "hidden" }}>
+      {/* SIDEBAR */}
+      <div style={{ width: 300, minWidth: 250, background: C.slateLight, borderRight: `1px solid ${C.slateMid}`, display: "flex", flexDirection: "column", overflowY: "auto" }}>
+        <div style={{ padding: "20px 16px", borderBottom: `1px solid ${C.slateMid}` }}>
+          <h2 style={{ fontFamily: sf.fontFamily, fontWeight: 800, color: C.white, fontSize: 18 }}>📦 Orders</h2>
+          <p style={{ color: C.gray, fontSize: 13, marginTop: 4 }}>Click an order to reply</p>
+        </div>
+        {orders.map(o => {
+          const hasNewMsg = o.messages.some(m => m.from === "customer");
+          const isSel = selected === o.id;
+          return (
+            <div key={o.id} onClick={() => setSelected(o.id)} style={{ padding: 16, borderBottom: `1px solid ${C.slateMid}`, background: isSel ? C.slate : "transparent", cursor: "pointer", transition: "background .15s", borderLeft: isSel ? `3px solid ${C.amber}` : "3px solid transparent" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontFamily: sf.fontFamily, fontWeight: 700, color: C.white, fontSize: 14 }}>{o.id}</span>
+                {o.messages.filter(m => m.from === "customer").length > 0 && (
+                  <span style={{ background: C.amber, color: C.slate, borderRadius: 99, fontSize: 11, fontWeight: 800, padding: "2px 8px" }}>{o.messages.filter(m => m.from === "customer").length}</span>
+                )}
+              </div>
+              <p style={{ color: C.grayLight, fontSize: 13, marginBottom: 4 }}>{o.customer}</p>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: sc(o.status), background: sc(o.status) + "20", borderRadius: 99, padding: "2px 8px" }}>{o.status}</span>
+                <span style={{ color: C.gray, fontSize: 12 }}>{o.service}</span>
+              </div>
+              {o.messages.length > 0 && <p style={{ color: C.gray, fontSize: 12, marginTop: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.messages[o.messages.length-1].text}</p>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MAIN */}
+      {!selected ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, color: C.gray }}>
+          <div style={{ fontSize: 64 }}>💬</div>
+          <p style={{ fontSize: 17 }}>Select an order to view & reply</p>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* HEADER */}
+          <div style={{ padding: "16px 24px", borderBottom: `1px solid ${C.slateMid}`, background: C.slateLight, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <h3 style={{ fontFamily: sf.fontFamily, fontWeight: 800, color: C.white, fontSize: 18 }}>{order?.id} — {order?.customer}</h3>
+              <p style={{ color: C.gray, fontSize: 13 }}>{order?.service} · {order?.from} → {order?.to}</p>
+              <p style={{ color: C.gray, fontSize: 13 }}>{order?.email} · {order?.phone}</p>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {["Awaiting Pickup","In Transit","Delivered"].map(s => (
+                <button key={s} onClick={() => updateStatus(order.id, s)} style={{ padding: "7px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: order.status === s ? sc(s) : "transparent", color: order.status === s ? C.slate : sc(s), border: `1.5px solid ${sc(s)}`, cursor: "pointer", transition: "all .15s" }}>{s}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* MESSAGES */}
+          <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            {order?.messages.length === 0 && <div style={{ textAlign: "center", color: C.gray, padding: 40 }}>No messages yet for this order.</div>}
+            {order?.messages.map((m, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: m.from === "admin" ? "flex-end" : "flex-start" }}>
+                <div style={{ maxWidth: "70%", background: m.from === "admin" ? C.amber : C.slateLight, color: m.from === "admin" ? C.slate : C.white, borderRadius: m.from === "admin" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", padding: "12px 16px", border: m.from === "customer" ? `1px solid ${C.slateMid}` : "none" }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, opacity: .7 }}>{m.from === "admin" ? "You (Admin)" : order.customer}</p>
+                  <p style={{ fontSize: 15 }}>{m.text}</p>
+                  <p style={{ fontSize: 11, opacity: .6, marginTop: 4, textAlign: "right" }}>{m.time}</p>
+                </div>
+              </div>
+            ))}
+            <div ref={endRef} />
+          </div>
+
+          {/* REPLY */}
+          <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.slateMid}`, background: C.slateLight, display: "flex", gap: 12, alignItems: "flex-end" }}>
+            <textarea rows={2} value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendReply())} placeholder="Type your reply… (Enter to send, Shift+Enter for new line)"
+              style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: C.slate, border: `1px solid ${C.slateMid}`, color: C.white, fontSize: 15, resize: "none" }} />
+            <AmberBtn onClick={sendReply} style={{ padding: "12px 24px", flexShrink: 0 }}>Send Reply</AmberBtn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Footer = ({ setPage }) => (
+  <footer style={{ background: C.slateLight, borderTop: `1px solid ${C.slateMid}`, padding: "48px 24px 32px" }}>
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 48, flexWrap: "wrap", justifyContent: "space-between", marginBottom: 40 }}>
+        <div style={{ maxWidth: 260 }}>
+          <div style={{ fontFamily: sf.fontFamily, fontWeight: 800, fontSize: 22, color: C.amber, marginBottom: 12 }}>⚡ SwiftDrop</div>
+          <p style={{ color: C.gray, lineHeight: 1.7, fontSize: 14 }}>Safe, on-time delivery for every package. Trusted by 10,000+ local businesses and individuals.</p>
+        </div>
+        <div>
+          <p style={{ fontWeight: 700, color: C.white, marginBottom: 12 }}>Pages</p>
+          {["Home","Services","About","Contact"].map(p => (<p key={p} onClick={() => setPage(p)} style={{ color: C.gray, marginBottom: 8, cursor: "pointer", fontSize: 14 }}>{p}</p>))}
+        </div>
+        <div>
+          <p style={{ fontWeight: 700, color: C.white, marginBottom: 12 }}>Services</p>
+          {["Fast Delivery","Scheduled Delivery","Standard Shipping"].map(s => (<p key={s} style={{ color: C.gray, marginBottom: 8, fontSize: 14 }}>{s}</p>))}
+        </div>
+        <div>
+          <p style={{ fontWeight: 700, color: C.white, marginBottom: 12 }}>Contact</p>
+          <p style={{ color: C.gray, fontSize: 14, marginBottom: 8 }}>Donald001dave@gmail.com</p>
+          <p style={{ color: C.gray, fontSize: 14, marginBottom: 16 }}>Mon–Sat, 7 AM – 9 PM</p>
+          <AmberBtn onClick={() => setPage("Track Package")} small>Track a Package</AmberBtn>
+        </div>
+      </div>
+      <div style={{ borderTop: `1px solid ${C.slateMid}`, paddingTop: 24, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <p style={{ color: C.gray, fontSize: 13 }}>© 2025 SwiftDrop. All rights reserved.</p>
+        <p style={{ color: C.gray, fontSize: 13 }}>Safe · Reliable · Transparent</p>
+      </div>
+    </div>
+  </footer>
+);
+
+export default function App() {
+  const [page, setPage] = useState("Home");
+  const [orders, setOrders] = useState(SAMPLE_ORDERS);
+  const showFooter = page !== "Admin";
+  return (
+    <>
+      <GlobalStyle />
+      <Nav page={page} setPage={setPage} />
+      {page === "Home" && <HomePage setPage={setPage} />}
+      {page === "Services" && <ServicesPage setPage={setPage} />}
+      {page === "About" && <AboutPage setPage={setPage} />}
+      {page === "Contact" && <ContactPage />}
+      {page === "Track Package" && <TrackPage orders={orders} setOrders={setOrders} />}
+      {page === "Admin" && <AdminPage orders={orders} setOrders={setOrders} />}
+      {showFooter && <Footer setPage={setPage} />}
+    </>
+  );
+}
